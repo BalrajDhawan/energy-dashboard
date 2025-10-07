@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Energy — Sector Mix by Region (Radar)</title>
+  <link rel="icon" href="assets/logo.svg" />
+  <!-- Unusual / handwritten fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=Patrick+Hand:wght@400&family=Inter:wght@400;600;800&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg1: #0f172a;  /* slate-900 */
+      --bg2: #1e293b;  /* slate-800 */
+      --card: rgba(255,255,255,0.06);
+      --card-border: rgba(255,255,255,0.18);
+      --ink: #e2e8f0;
+      --ink-dim: #b6c2d9;
+    }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: radial-gradient(1200px 800px at 10% 10%, #10172a 0%, var(--bg1) 45%, var(--bg2) 100%);
+      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans";
+    }
+    header { display:flex; align-items:center; gap:12px; padding:20px 24px 6px; }
+    header img { width:28px; height:28px; }
+    header h1 { margin:0; font-family:"Patrick Hand"; letter-spacing:0.4px; font-size:28px; }
+    .toolbar { display:flex; gap:8px; margin-left:auto; }
+    .btn {
+      color:#a78bfa; text-decoration:none; border:1px solid var(--card-border);
+      padding:6px 10px; border-radius:999px; font-size:12px; background:var(--card); cursor:pointer;
+    }
+    .wrap { max-width:1080px; margin:0 auto; padding:18px; }
+    .card {
+      background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03));
+      border:1px solid var(--card-border); backdrop-filter: blur(6px);
+      border-radius:18px; padding:18px; box-shadow:0 12px 30px rgba(0,0,0,0.35);
+    }
+    .meta { display:grid; grid-template-columns:1fr; gap:8px; margin-bottom:10px; }
+    .meta h2 { margin:0; font-size:18px; font-weight:700; color:var(--ink); }
+    .hint { font-family:"Caveat"; font-size:16px; color:var(--ink-dim); }
+    canvas {
+      width:100% !important; height:540px !important; border-radius:16px;
+      background: radial-gradient(800px 500px at 80% -20%, rgba(167,139,250,0.18), rgba(34,211,238,0.10) 35%, transparent 65%);
+    }
+    footer { max-width:1080px; margin:12px auto 36px; padding:0 18px; color:var(--ink-dim); font-size:12px; }
+  </style>
+</head>
+<body>
+  <header>
+    <img src="assets/logo.svg" alt="logo" />
+    <h1>Sector Mix by Region (Radar)</h1>
+    <div class="toolbar">
+      <a class="btn" href="./index.html">← Back to Stacked Bars</a>
+      <button class="btn" id="savePng">Download PNG</button>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <div class="card">
+      <div class="meta">
+        <h2>Residential vs Commercial vs Industrial — Share of Electricity Use (%, 2024)</h2>
+        <div class="hint">note: proportions per region; sums across sectors ≈ 100%</div>
+      </div>
+      <canvas id="radar"></canvas>
+    </div>
+  </div>
+
+  <footer>
+    <div>© 2025 Energy Dashboard — by Balraj Dhawan</div>
+    <div><strong>Source:</strong> IEA regional profiles (illustrative compilation). Percentages are approximate to showcase visual comparisons.</div>
+  </footer>
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"></script>
+  <script>
+    // ---------- CSV utils ----------
+    function parseCsv(text) {
+      const [headerLine, ...lines] = text.trim().split(/\r?\n/);
+      const headers = headerLine.split(",").map(s => s.trim());
+      return lines.map(line => {
+        const cols = line.split(",").map(s => s.trim());
+        const obj = {};
+        headers.forEach((h, i) => {
+          const num = Number(cols[i]);
+          obj[h] = isNaN(num) ? cols[i] : num;
+        });
+        return obj;
+      });
+    }
+
+    // Fallback CSV string (used if data/sector.csv is missing)
+    const FALLBACK_CSV = `region,residential_pct,commercial_pct,industrial_pct
+North America,36,29,35
+Europe,33,31,36
+Asia Pacific,25,27,48
+Latin America,39,26,35
+Middle East,28,33,39
+Africa,41,22,37`;
+
+    async function loadRows() {
+      try {
+        const res = await fetch('data/sector.csv', { cache: 'no-store' });
+        if (!res.ok) throw new Error('No CSV file found, using fallback.');
+        const txt = await res.text();
+        return parseCsv(txt);
+      } catch (e) {
+        return parseCsv(FALLBACK_CSV);
+      }
+    }
+
+    // ---------- Chart build ----------
+    (async function init() {
+      const rows = await loadRows();
+
+      // Axes for the radar
+      const labels = ["Residential %", "Commercial %", "Industrial %"];
+
+      // Datasets per region (vary hue)
+      const datasets = rows.map((r, idx) => {
+        const hue = 260 + idx * 20; // violet/blue band
+        return {
+          label: r.region,
+          data: [r.residential_pct, r.commercial_pct, r.industrial_pct],
+          backgroundColor: `hsla(${hue}, 85%, 70%, 0.25)`,
+          borderColor: `hsla(${hue}, 90%, 75%, 0.9)`,
+          pointBackgroundColor: `hsla(${hue}, 90%, 75%, 0.9)`,
+          pointBorderColor: '#fff',
+          pointRadius: 4,
+          tension: 0.2,
+          borderWidth: 2
+        };
+      });
+
+      const ctx = document.getElementById('radar').getContext('2d');
+
+      // Inline annotation: mark the top region per axis
+      function annotateTopPerAxis(chart) {
+        const { ctx, data, scales } = chart;
+        const rScale = scales.r;
+        ctx.save();
+        ctx.font = '700 16px "Caveat", cursive';
+        ctx.fillStyle = 'rgba(255,255,255,0.95)';
+        for (let axis = 0; axis < labels.length; axis++) {
+          let maxVal = -Infinity, maxIdx = -1;
+          data.datasets.forEach((ds, i) => {
+            const v = ds.data[axis];
+            if (v > maxVal) { maxVal = v; maxIdx = i; }
+          });
+          const angle = rScale.getIndexAngle(axis);
+          const pt = rScale.getPointPositionForValue(axis, maxVal);
+          ctx.beginPath();
+          ctx.moveTo(pt.x, pt.y);
+          const dx = Math.cos(angle) * 24, dy = Math.sin(angle) * 24;
+          ctx.lineTo(pt.x + dx, pt.y + dy);
+          ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+          ctx.lineWidth = 1.2;
+          ctx.stroke();
+          ctx.fillText(`${data.datasets[maxIdx].label} tops ${labels[axis]}`, pt.x + dx + 6, pt.y + dy + 2);
+        }
+        ctx.restore();
+      }
+
+      const chart = new Chart(ctx, {
+        type: 'radar',
+        data: { labels, datasets },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          layout: { padding: 10 },
+          elements: { line: { borderJoinStyle: 'round' } },
+          plugins: {
+            legend: {
+              labels: { font: { family: 'Patrick Hand', size: 13 }, color: '#e5e7eb' }
+            },
+            tooltip: {
+              backgroundColor: 'rgba(15,23,42,0.95)',
+              titleColor: '#e5e7eb',
+              bodyColor: '#cbd5e1',
+              callbacks: {
+                label: (ctx) => ` ${ctx.dataset.label}: ${ctx.parsed.r}% ${labels[ctx.dataIndex]}`
+              }
+            }
+          },
+          scales: {
+            r: {
+              angleLines: { color: 'rgba(255,255,255,0.08)' },
+              grid: { color: 'rgba(255,255,255,0.08)' },
+              suggestedMin: 0,
+              suggestedMax: 60,
+              ticks: { showLabelBackdrop: false, color: '#b6c2d9', callback: v => `${v}%` },
+              pointLabels: { font: { family: 'Caveat', size: 18 }, color: '#cbd5e1' }
+            }
+          },
+          animation: { onComplete: () => annotateTopPerAxis(chart) }
+        }
+      });
+
+      // PNG export
+      document.getElementById('savePng').addEventListener('click', () => {
+        const link = document.createElement('a');
+        link.download = 'sector-radar-2024.png';
+        link.href = chart.canvas.toDataURL('image/png', 1.0);
+        link.click();
+      });
+    })();
+  </script>
+</body>
+</html>
